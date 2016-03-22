@@ -320,6 +320,8 @@ def excel_to_db(excel_file):
                                 asset.status = statuses[0]
                     if comment:
                         asset.comment = comment
+                    else:
+                        asset.comment = ''
                     asset.save()
         return True
 
