@@ -287,7 +287,7 @@ def excel_to_db(excel_file):
             row = table.row_values(row_num)
             if row:
                 group_instance = []
-                ip, port, hostname, use_default_auth, username, password, group = row
+                ip, port, hostname, use_default_auth, username, password, group, idc_name, asset_type, status, comment = row
                 if get_object(Asset, hostname=hostname):
                     continue
                 if isinstance(password, int) or isinstance(password, float):
@@ -310,6 +310,22 @@ def excel_to_db(excel_file):
                             group_instance.append(group)
                     if group_instance:
                         asset.group = group_instance
+                    if idc_name:
+                        idc_instance = get_object(IDC, name=idc_name)
+                        if idc_instance:
+                            asset.idc = idc_instance
+                    if asset_type:
+                        for asset_types in ASSET_TYPE:
+                            if asset_type == asset_types[1]:
+                                asset.asset_type = asset_types[0]
+                    if status:
+                        for statuses in ASSET_STATUS:
+                            if status == statuses[1]:
+                                asset.status = statuses[0]
+                    if comment:
+                        asset.comment = comment
+                    else:
+                        asset.comment = ''
                     asset.save()
         return True
 
