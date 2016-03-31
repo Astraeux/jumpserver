@@ -105,7 +105,7 @@ class PreSetup(object):
 
     def check_platform(self):
         if not (self._is_redhat or self._is_ubuntu):
-            print(u"支持的平台: CentOS, RedHat, Fedora, Debian, Ubuntu, 暂不支持其他平台安装.")
+            print(u"支持的平台: CentOS, RedHat, Fedora, Debian, Ubuntu, Amazon Linux, 暂不支持其他平台安装.")
             exit()
 
     @staticmethod
