@@ -85,12 +85,12 @@ class PreSetup(object):
 
     @property
     def _is_redhat(self):
-        if self.dist == "centos" or self.dist == "redhat" or self.dist == "fedora" or self.dist == "amazon linux ami":
+        if self.dist.startswith("centos") or self.dist.startswith("red") or self.dist == "fedora" or self.dist == "amazon linux ami":
             return True
 
     @property
     def _is_centos7(self):
-        if self.dist == "centos" and self.version.startswith("7"):
+        if self.dist.startswith("centos") and self.version.startswith("7"):
             return True
 
     @property
@@ -238,6 +238,7 @@ class PreSetup(object):
     def _require_pip(self):
         color_print('开始安装依赖pip包', 'green')
         bash('pip uninstall -y pycrypto')
+        bash('rm -rf /usr/lib64/python2.6/site-packages/Crypto/')
         ret_code = bash('pip install -r requirements.txt')
         self.check_bash_return(ret_code, "安装JumpServer 依赖的python库失败！")
 
