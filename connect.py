@@ -93,9 +93,7 @@ class Tty(object):
         self.remote_ip = ''
         self.login_type = login_type
         self.vim_flag = False
-        self.vim_end_flag = False
         self.vim_end_pattern = re.compile(r'\x1b\[\?1049', re.X)
-        self.vim_pattern = re.compile(r'\W?vi[m]?\s.* | \W?fg\s.*', re.X)
         self.vim_data = ''
         self.stream = None
         self.screen = None
@@ -117,7 +115,8 @@ class Tty(object):
                 return True
         return False
 
-    def command_parser(self, command):
+    @staticmethod
+    def command_parser(command):
         """
         处理命令中如果有ps1或者mysql的特殊情况,极端情况下会有ps1和mysql
         :param command:要处理的字符传
@@ -157,14 +156,10 @@ class Tty(object):
                     else:
                         command = line_data
                     break
-            if command != '':
-                # 判断用户输入的是否是vim 或者fg命令
-                if self.vim_pattern.search(command):
-                    self.vim_flag = True
-            # 虚拟屏幕清空
-            self.screen.reset()
         except Exception:
             pass
+        # 虚拟屏幕清空
+        self.screen.reset()
         return command
 
     def get_log(self):
@@ -180,8 +175,8 @@ class Tty(object):
         log_file_path = os.path.join(today_connect_log_dir, '%s_%s_%s' % (self.username, self.asset_name, time_start))
 
         try:
-            mkdir(os.path.dirname(today_connect_log_dir), mode=0777)
-            mkdir(today_connect_log_dir, mode=0777)
+            mkdir(os.path.dirname(today_connect_log_dir), mode=777)
+            mkdir(today_connect_log_dir, mode=777)
         except OSError:
             logger.debug('创建目录 %s 失败，请修改%s目录权限' % (today_connect_log_dir, tty_log_dir))
             raise ServerError('创建目录 %s 失败，请修改%s目录权限' % (today_connect_log_dir, tty_log_dir))
@@ -305,7 +300,6 @@ class SshTty(Tty):
         old_tty = termios.tcgetattr(sys.stdin)
         pre_timestamp = time.time()
         data = ''
-        input_str = ''
         input_mode = False
         try:
             tty.setraw(sys.stdin.fileno())
@@ -325,8 +319,7 @@ class SshTty(Tty):
                         x = self.channel.recv(10240)
                         if len(x) == 0:
                             break
-                        if self.vim_flag:
-                            self.vim_data += x
+
                         index = 0
                         len_x = len(x)
                         while index < len_x:
@@ -347,10 +340,9 @@ class SshTty(Tty):
                         pre_timestamp = now_timestamp
                         log_file_f.flush()
 
-                        if input_mode and not self.is_output(x):
+                        self.vim_data += x
+                        if input_mode:
                             data += x
-
-                        input_str = ''
 
                     except socket.timeout:
                         pass
@@ -362,25 +354,22 @@ class SshTty(Tty):
                         pass
                     termlog.recoder = True
                     input_mode = True
-                    input_str += x
-                    if str(x) in ['\r', '\n', '\r\n']:
-                        # 这个是用来处理用户的复制操作
-                        if input_str != x:
-                            data += input_str
-                        if self.vim_flag:
-                            match = self.vim_end_pattern.findall(self.vim_data)
-                            if match:
-                                if self.vim_end_flag or len(match) == 2:
-                                    self.vim_flag = False
-                                    self.vim_end_flag = False
-                                else:
-                                    self.vim_end_flag = True
-                        else:
+                    if self.is_output(str(x)):
+                        # 如果len(str(x)) > 1 说明是复制输入的
+                        if len(str(x)) > 1:
+                            data = x
+                        match = self.vim_end_pattern.findall(self.vim_data)
+                        if match:
+                            if self.vim_flag or len(match) == 2:
+                                self.vim_flag = False
+                            else:
+                                self.vim_flag = True
+                        elif not self.vim_flag:
+                            self.vim_flag = False
                             data = self.deal_command(data)[0:200]
-                            if len(data) > 0:
+                            if data is not None:
                                 TtyLog(log=log, datetime=datetime.datetime.now(), cmd=data).save()
                         data = ''
-                        input_str = ''
                         self.vim_data = ''
                         input_mode = False
 
@@ -406,7 +395,7 @@ class SshTty(Tty):
         """
         # 发起ssh连接请求 Make a ssh connection
         ssh = self.get_connection()
-        
+
         transport = ssh.get_transport()
         transport.set_keepalive(30)
         transport.use_compression(True)
@@ -422,7 +411,7 @@ class SshTty(Tty):
             signal.signal(signal.SIGWINCH, self.set_win_size)
         except:
             pass
-        
+
         self.posix_shell()
 
         # Shutdown channel socket
@@ -508,16 +497,33 @@ class Nav(object):
             # 如果没有输入就展现所有
             self.search_result = self.perm_assets
 
+    @staticmethod
+    def truncate_str(str_, length=30):
+        str_ = str_.decode('utf-8')
+        if len(str_) > length:
+            return str_[:14] + '..' + str_[-14:]
+        else:
+            return str_
+
+    @staticmethod
+    def get_max_asset_property_length(assets, property_='hostname'):
+        try:
+            return max([len(getattr(asset, property_)) for asset in assets])
+        except ValueError:
+            return 30
+
     def print_search_result(self):
-        color_print('[%-3s] %-12s %-15s  %-5s  %-10s  %s' % ('ID', '主机名', 'IP', '端口', '系统用户', '备注'), 'title')
+        hostname_max_length = self.get_max_asset_property_length(self.search_result)
+        line = '[%-3s] %-16s %-5s  %-' + str(hostname_max_length) + 's %-10s %s'
+        color_print(line % ('ID', 'IP', 'Port', 'Hostname', 'SysUser', 'Comment'), 'title')
         if hasattr(self.search_result, '__iter__'):
             for index, asset in enumerate(self.search_result):
                 # 获取该资产信息
                 asset_info = get_asset_info(asset)
                 # 获取该资产包含的角色
                 role = [str(role.name) for role in self.user_perm.get('asset').get(asset).get('role')]
-                print '[%-3s] %-15s %-15s  %-5s  %-10s  %s' % (index, asset.hostname, asset.ip, asset_info.get('port'),
-                                                               role, asset.comment)
+                print line % (index, asset.ip, asset_info.get('port'),
+                              self.truncate_str(asset.hostname), str(role).replace("'", ''), asset.comment)
         print
 
     def try_connect(self):
